@@ -18,7 +18,14 @@
  */
 
 #include "controlcenterdialog.h"
-#include <KWindowSystem>
+
+#include <QMouseEvent>
+#include <QKeyEvent>
+#include <QEvent>
+
+#include <KWindowEffects>
+#include <KX11Extras>  // KF6 X11 专用 API
+#include <NETWM>       // NET::SkipTaskbar / SkipPager / SkipSwitcher
 
 ControlCenterDialog::ControlCenterDialog(QQuickWindow *parent)
     : QQuickWindow(parent)
@@ -38,19 +45,32 @@ void ControlCenterDialog::open()
 bool ControlCenterDialog::eventFilter(QObject *object, QEvent *event)
 {
     if (event->type() == QEvent::MouseButtonPress) {
+
         if (QWindow *w = qobject_cast<QWindow*>(object)) {
-            if (!w->geometry().contains(static_cast<QMouseEvent*>(event)->globalPos())) {
+            if (!w->geometry().contains(static_cast<QMouseEvent*>(event)->globalPosition().toPoint())) {
                 ControlCenterDialog::setVisible(false);
             }
         }
+
     } else if (event->type() == QEvent::KeyPress) {
+
         QKeyEvent *keyEvent = static_cast<QKeyEvent*>(event);
         if (keyEvent->key() == Qt::Key_Escape) {
             ControlCenterDialog::setVisible(false);
         }
+
     } else if (event->type() == QEvent::Show) {
-        KWindowSystem::setState(winId(), NET::SkipTaskbar | NET::SkipPager | NET::SkipSwitcher);
+
+#ifdef KWS_X11
+        // KF6: KWindowSystem::setState → KX11Extras::setState
+        KX11Extras::setState(
+            winId(),
+            NET::SkipTaskbar | NET::SkipPager | NET::SkipSwitcher
+        );
+#endif
+
     } else if (event->type() == QEvent::Hide) {
+
         setMouseGrabEnabled(false);
         setKeyboardGrabEnabled(false);
     }

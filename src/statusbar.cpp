@@ -32,8 +32,8 @@
 #include <QScreen>
 
 #include <NETWM>
-#include <KWindowSystem>
 #include <KWindowEffects>
+#include <KX11Extras>     // KF6 迁移关键头文件
 
 StatusBar::StatusBar(QQuickView *parent)
     : QQuickView(parent)
@@ -45,8 +45,11 @@ StatusBar::StatusBar(QQuickView *parent)
     setFlags(Qt::FramelessWindowHint | Qt::WindowDoesNotAcceptFocus);
     setColor(Qt::transparent);
 
-    KWindowSystem::setOnDesktop(winId(), NET::OnAllDesktops);
-    KWindowSystem::setType(winId(), NET::Dock);
+#ifdef KWS_X11
+    // KF6: KWindowSystem 移除 → 改用 KX11Extras
+    KX11Extras::setOnAllDesktops(winId());
+    KX11Extras::setWindowType(winId(), NET::Dock);
+#endif
 
     new StatusbarAdaptor(this);
     new AppMenu(this);
@@ -108,12 +111,13 @@ void StatusBar::updateGeometry()
     setGeometry(windowRect);
     updateViewStruts();
 
-    KWindowEffects::enableBlurBehind(winId(), true);
+    // KF6: enableBlurBehind() 需要 QWindow*
+    KWindowEffects::enableBlurBehind(this, true);
 }
 
 void StatusBar::updateViewStruts()
 {
-    const QRect wholeScreen(QPoint(0, 0), screen()->virtualSize());
+#ifdef KWS_X11
     const QRect rect = geometry();
     const int topOffset = screen()->geometry().top();
 
@@ -122,25 +126,30 @@ void StatusBar::updateViewStruts()
     strut.top_start = rect.x();
     strut.top_end = rect.x() + rect.width() - 1;
 
-    KWindowSystem::setExtendedStrut(winId(),
-                                 strut.left_width,
-                                 strut.left_start,
-                                 strut.left_end,
-                                 strut.right_width,
-                                 strut.right_start,
-                                 strut.right_end,
-                                 strut.top_width,
-                                 strut.top_start,
-                                 strut.top_end,
-                                 strut.bottom_width,
-                                 strut.bottom_start,
-                                 strut.bottom_end);
+    // KF6: 移到 KX11Extras
+    KX11Extras::setExtendedStrut(winId(),
+        strut.left_width,
+        strut.left_start,
+        strut.left_end,
+        strut.right_width,
+        strut.right_start,
+        strut.right_end,
+        strut.top_width,
+        strut.top_start,
+        strut.top_end,
+        strut.bottom_width,
+        strut.bottom_start,
+        strut.bottom_end);
+#endif
 }
 
 void StatusBar::initState()
 {
-    // Remain below the face launchpad.
-    KWindowSystem::setState(winId(), m_acticity->launchPad() ? NET::KeepBelow : NET::KeepAbove);
+#ifdef KWS_X11
+    // KF6: KWindowSystem::setState → KX11Extras::setState
+    KX11Extras::setState(winId(),
+                         m_acticity->launchPad() ? NET::KeepBelow : NET::KeepAbove);
+#endif
 }
 
 void StatusBar::onPrimaryScreenChanged(QScreen *screen)

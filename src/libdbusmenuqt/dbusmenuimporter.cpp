@@ -36,6 +36,7 @@
 #include <QTimer>
 #include <QToolButton>
 #include <QWidgetAction>
+#include <QActionGroup>  // 添加QActionGroup头文件
 
 // Local
 #include "dbusmenushortcut_p.h"

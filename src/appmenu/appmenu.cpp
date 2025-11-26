@@ -34,9 +34,10 @@
 #include <QDBusInterface>
 #include <QMenu>
 
-// X11
-#include <QX11Info>
+// X11 - 使用替代方案
+#ifdef Q_OS_LINUX
 #include <xcb/xcb.h>
+#endif
 
 static const QByteArray s_x11AppMenuServiceNamePropertyName = QByteArrayLiteral("_KDE_NET_WM_APPMENU_SERVICE_NAME");
 static const QByteArray s_x11AppMenuObjectPathPropertyName = QByteArrayLiteral("_KDE_NET_WM_APPMENU_OBJECT_PATH");
@@ -95,16 +96,23 @@ AppMenu::AppMenu(QObject *parent)
         setupMenuImporter();
     // }
 
-    if (!QX11Info::connection()) {
-        m_xcbConn = xcb_connect(nullptr, nullptr);
+#ifdef Q_OS_LINUX
+    // 在Qt6中，QX11Info已被移除，直接创建xcb连接
+    m_xcbConn = xcb_connect(nullptr, nullptr);
+    if (xcb_connection_has_error(m_xcbConn)) {
+        xcb_disconnect(m_xcbConn);
+        m_xcbConn = nullptr;
     }
+#endif
 }
 
 AppMenu::~AppMenu()
 {
+#ifdef Q_OS_LINUX
     if (m_xcbConn) {
         xcb_disconnect(m_xcbConn);
     }
+#endif
 }
 
 bool AppMenu::eventFilter(QObject *object, QEvent *event)
@@ -117,47 +125,46 @@ bool AppMenu::eventFilter(QObject *object, QEvent *event)
 //            waylandWindow->display()->setLastInputDevice(device, device->pointer()->mEnterSerial, waylandWindow);
 //        }
 //    }
-    return AppMenu::eventFilter(object, event);
+    return QObject::eventFilter(object, event); // 修复：应该是QObject::eventFilter
 }
 
 void AppMenu::slotWindowRegistered(WId id, const QString &serviceName, const QDBusObjectPath &menuObjectPath)
 {
-    auto *c = QX11Info::connection();
-    if (!c) {
-        c = m_xcbConn;
+#ifdef Q_OS_LINUX
+    if (!m_xcbConn) {
+        return;
     }
 
-    if (c) {
-        static xcb_atom_t s_serviceNameAtom = XCB_ATOM_NONE;
-        static xcb_atom_t s_objectPathAtom = XCB_ATOM_NONE;
+    static xcb_atom_t s_serviceNameAtom = XCB_ATOM_NONE;
+    static xcb_atom_t s_objectPathAtom = XCB_ATOM_NONE;
 
-        auto setWindowProperty = [c](WId id, xcb_atom_t &atom, const QByteArray &name, const QByteArray &value) {
-            if (atom == XCB_ATOM_NONE) {
-                const xcb_intern_atom_cookie_t cookie = xcb_intern_atom(c, false, name.length(), name.constData());
-                QScopedPointer<xcb_intern_atom_reply_t, QScopedPointerPodDeleter> reply(xcb_intern_atom_reply(c, cookie, nullptr));
-                if (reply.isNull()) {
-                    return;
-                }
-                atom = reply->atom;
-                if (atom == XCB_ATOM_NONE) {
-                    return;
-                }
-            }
-
-            auto cookie = xcb_change_property_checked(c, XCB_PROP_MODE_REPLACE, id, atom, XCB_ATOM_STRING, 8, value.length(), value.constData());
-            xcb_generic_error_t *error;
-            if ((error = xcb_request_check(c, cookie))) {
-                qWarning() << "Got an error";
-                free(error);
+    auto setWindowProperty = [this](WId id, xcb_atom_t &atom, const QByteArray &name, const QByteArray &value) {
+        if (atom == XCB_ATOM_NONE) {
+            const xcb_intern_atom_cookie_t cookie = xcb_intern_atom(m_xcbConn, false, name.length(), name.constData());
+            QScopedPointer<xcb_intern_atom_reply_t, QScopedPointerPodDeleter> reply(xcb_intern_atom_reply(m_xcbConn, cookie, nullptr));
+            if (reply.isNull()) {
                 return;
             }
-        };
+            atom = reply->atom;
+            if (atom == XCB_ATOM_NONE) {
+                return;
+            }
+        }
 
-        // TODO only set the property if it doesn't already exist
+        auto cookie = xcb_change_property_checked(m_xcbConn, XCB_PROP_MODE_REPLACE, id, atom, XCB_ATOM_STRING, 8, value.length(), value.constData());
+        xcb_generic_error_t *error;
+        if ((error = xcb_request_check(m_xcbConn, cookie))) {
+            qWarning() << "Got an error";
+            free(error);
+            return;
+        }
+    };
 
-        setWindowProperty(id, s_serviceNameAtom, s_x11AppMenuServiceNamePropertyName, serviceName.toUtf8());
-        setWindowProperty(id, s_objectPathAtom, s_x11AppMenuObjectPathPropertyName, menuObjectPath.path().toUtf8());
-    }
+    // TODO only set the property if it doesn't already exist
+
+    setWindowProperty(id, s_serviceNameAtom, s_x11AppMenuServiceNamePropertyName, serviceName.toUtf8());
+    setWindowProperty(id, s_objectPathAtom, s_x11AppMenuObjectPathPropertyName, menuObjectPath.path().toUtf8());
+#endif
 }
 
 void AppMenu::slotShowMenu(int x, int y, const QString &serviceName, const QDBusObjectPath &menuObjectPath, int actionId)
@@ -240,5 +247,6 @@ void AppMenu::fakeUnityAboutToShow(const QString &service, const QDBusObjectPath
 
 KDBusMenuImporter *AppMenu::getImporter(const QString &service, const QString &path)
 {
-
+    // 需要实现这个函数
+    return nullptr;
 }

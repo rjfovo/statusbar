@@ -22,26 +22,37 @@
 #include <QFile>
 #include <QCursor>
 #include <QDebug>
-#include <QX11Info>
 #include <QDirIterator>
 #include <QSettings>
 #include <QRegularExpression>
+#include <QGuiApplication>                 // <-- Qt6: 用来访问 nativeInterface
 
 #include <NETWM>
+#include <KWindowEffects>
+#include <KX11Extras>                      // KF6 X11 API
+#include <KWindowInfo>
 #include <KWindowSystem>
 
-static const QStringList blockList = {"cutefish-launcher",
-                                      "cutefish-statusbar"};
+static const QStringList blockList = {
+    "cutefish-launcher",
+    "cutefish-statusbar"
+};
 
 Activity::Activity(QObject *parent)
     : QObject(parent)
     , m_cApps(CApplications::self())
 {
+#ifdef KWS_X11
     onActiveWindowChanged();
 
-    connect(KWindowSystem::self(), &KWindowSystem::activeWindowChanged, this, &Activity::onActiveWindowChanged);
-    connect(KWindowSystem::self(), static_cast<void (KWindowSystem::*)(WId id, NET::Properties properties, NET::Properties2 properties2)>(&KWindowSystem::windowChanged),
+    connect(KWindowSystem::self(), &KWindowSystem::activeWindowChanged,
             this, &Activity::onActiveWindowChanged);
+
+    connect(KWindowSystem::self(),
+            static_cast<void (KWindowSystem::*)(WId, NET::Properties, NET::Properties2)>
+            (&KWindowSystem::windowChanged),
+            this, &Activity::onActiveWindowChanged);
+#endif
 }
 
 bool Activity::launchPad() const
@@ -61,63 +72,82 @@ QString Activity::icon() const
 
 void Activity::close()
 {
-    NETRootInfo(QX11Info::connection(), NET::CloseWindow).closeWindowRequest(KWindowSystem::activeWindow());
+#ifdef KWS_X11
+    if (auto x11 = QGuiApplication::instance()->nativeInterface<QNativeInterface::QX11Application>()) {
+        NETRootInfo(x11->connection(), NET::CloseWindow)
+            .closeWindowRequest(KWindowSystem::activeWindow());
+    }
+#endif
 }
 
 void Activity::minimize()
 {
-    KWindowSystem::minimizeWindow(KWindowSystem::activeWindow());
+#ifdef KWS_X11
+    KX11Extras::minimizeWindow(KWindowSystem::activeWindow());
+#endif
 }
 
 void Activity::restore()
 {
-    KWindowSystem::clearState(KWindowSystem::activeWindow(), NET::Max);
+#ifdef KWS_X11
+    KX11Extras::clearState(KWindowSystem::activeWindow(), NET::Max);
+#endif
 }
 
 void Activity::maximize()
 {
-    KWindowSystem::setState(KWindowSystem::activeWindow(), NET::Max);
+#ifdef KWS_X11
+    KX11Extras::setState(KWindowSystem::activeWindow(), NET::Max);
+#endif
 }
 
 void Activity::toggleMaximize()
 {
+#ifdef KWS_X11
     KWindowInfo info(KWindowSystem::activeWindow(), NET::WMState);
     bool isWindow = !info.hasState(NET::SkipTaskbar) ||
-                     info.windowType(NET::UtilityMask) != NET::Utility ||
-                     info.windowType(NET::DesktopMask) != NET::Desktop;
+                    info.windowType(NET::UtilityMask) != NET::Utility ||
+                    info.windowType(NET::DesktopMask) != NET::Desktop;
 
     if (!isWindow)
         return;
 
-    bool isMaximized = info.hasState(NET::Max);
-    isMaximized ? restore() : maximize();
+    bool isMax = info.hasState(NET::Max);
+    isMax ? restore() : maximize();
+#endif
 }
 
 void Activity::move()
 {
+#ifdef KWS_X11
     WId winId = KWindowSystem::activeWindow();
     KWindowInfo info(winId, NET::WMState | NET::WMGeometry | NET::WMDesktop);
-    bool window = !info.hasState(NET::SkipTaskbar) ||
-                     info.windowType(NET::UtilityMask) != NET::Utility ||
-                     info.windowType(NET::DesktopMask) != NET::Desktop;
+    bool isWindow = !info.hasState(NET::SkipTaskbar) ||
+                    info.windowType(NET::UtilityMask) != NET::Utility ||
+                    info.windowType(NET::DesktopMask) != NET::Desktop;
 
-    if (!window)
-        return;
+    if (!isWindow) return;
 
-    bool onCurrent = info.isOnCurrentDesktop();
-    if (!onCurrent) {
-        KWindowSystem::setCurrentDesktop(info.desktop());
-        KWindowSystem::forceActiveWindow(winId);
+    if (!info.isOnCurrentDesktop()) {
+        KX11Extras::setCurrentDesktop(info.desktop());
+        KX11Extras::forceActiveWindow(winId);
     }
 
-    NETRootInfo ri(QX11Info::connection(), NET::WMMoveResize);
-    ri.moveResizeRequest(winId,
-                         QCursor::pos().x(),
-                         QCursor::pos().y(), NET::Move);
+    if (auto x11 = QGuiApplication::instance()->nativeInterface<QNativeInterface::QX11Application>()) {
+        NETRootInfo ri(x11->connection(), NET::WMMoveResize);
+        ri.moveResizeRequest(
+            winId,
+            QCursor::pos().x(),
+            QCursor::pos().y(),
+            NET::Move
+        );
+    }
+#endif
 }
 
 bool Activity::isAcceptableWindow(quint64 wid)
 {
+#ifdef KWS_X11
     QFlags<NET::WindowTypeMask> ignoreList;
     ignoreList |= NET::DesktopMask;
     ignoreList |= NET::DockMask;
@@ -127,7 +157,8 @@ bool Activity::isAcceptableWindow(quint64 wid)
     ignoreList |= NET::PopupMenuMask;
     ignoreList |= NET::NotificationMask;
 
-    KWindowInfo info(wid, NET::WMWindowType | NET::WMState, NET::WM2TransientFor | NET::WM2WindowClass);
+    KWindowInfo info(wid, NET::WMWindowType | NET::WMState,
+                     NET::WM2TransientFor | NET::WM2WindowClass);
 
     if (!info.valid())
         return false;
@@ -138,23 +169,34 @@ bool Activity::isAcceptableWindow(quint64 wid)
     if (info.hasState(NET::SkipTaskbar) || info.hasState(NET::SkipPager))
         return false;
 
-    // WM_TRANSIENT_FOR hint not set - normal window
-    WId transFor = info.transientFor();
-    if (transFor == 0 || transFor == wid || transFor == (WId) QX11Info::appRootWindow())
+    WId root = 0;
+    if (auto x11 = QGuiApplication::instance()->nativeInterface<QNativeInterface::QX11Application>()) {
+        root = x11->appRootWindow ? static_cast<WId>(x11->appRootWindow()) : 0;
+        // Note: some Qt builds expose appRootWindow via that native interface; if not available,
+        // root will remain 0 and transientFor checks fall back accordingly.
+    }
+
+    WId trans = info.transientFor();
+    if (trans == 0 || trans == wid || trans == root)
         return true;
 
-    info = KWindowInfo(transFor, NET::WMWindowType);
+    info = KWindowInfo(trans, NET::WMWindowType);
 
-    QFlags<NET::WindowTypeMask> normalFlag;
-    normalFlag |= NET::NormalMask;
-    normalFlag |= NET::DialogMask;
-    normalFlag |= NET::UtilityMask;
+    QFlags<NET::WindowTypeMask> normal;
+    normal |= NET::NormalMask;
+    normal |= NET::DialogMask;
+    normal |= NET::UtilityMask;
 
-    return !NET::typeMatchesMask(info.windowType(NET::AllTypesMask), normalFlag);
+    return !NET::typeMatchesMask(info.windowType(NET::AllTypesMask), normal);
+#else
+    Q_UNUSED(wid)
+    return false;
+#endif
 }
 
 void Activity::onActiveWindowChanged()
 {
+#ifdef KWS_X11
     KWindowInfo info(KWindowSystem::activeWindow(),
                      NET::WMState | NET::WMVisibleName | NET::WMWindowType,
                      NET::WM2WindowClass);
@@ -164,16 +206,14 @@ void Activity::onActiveWindowChanged()
 
     if (NET::typeMatchesMask(info.windowType(NET::AllTypesMask), NET::DesktopMask)) {
         m_title = tr("Desktop");
-        m_icon = "";
-
+        m_icon.clear();
         emit titleChanged();
         emit iconChanged();
-
         return;
     }
 
-    if (!isAcceptableWindow(KWindowSystem::activeWindow())
-            || blockList.contains(info.windowClassClass())) {
+    if (!isAcceptableWindow(KWindowSystem::activeWindow()) ||
+        blockList.contains(info.windowClassClass())) {
         clearTitle();
         clearIcon();
         return;
@@ -183,7 +223,6 @@ void Activity::onActiveWindowChanged()
     m_windowClass = info.windowClassClass().toLower();
 
     CAppItem *item = m_cApps->matchItem(m_pid, m_windowClass);
-
     if (item) {
         m_title = item->localName;
         emit titleChanged();
@@ -192,15 +231,15 @@ void Activity::onActiveWindowChanged()
             m_icon = item->icon;
             emit iconChanged();
         }
-
     } else {
-        QString title = info.visibleName();
-        if (title != m_title) {
-            m_title = title;
+        QString t = info.visibleName();
+        if (t != m_title) {
+            m_title = t;
             emit titleChanged();
             clearIcon();
         }
     }
+#endif
 }
 
 void Activity::clearTitle()

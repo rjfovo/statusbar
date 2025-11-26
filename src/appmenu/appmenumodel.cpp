@@ -30,44 +30,119 @@
 #include <QDBusServiceWatcher>
 #include <QGuiApplication>
 #include <QMenu>
-
-#include <QX11Info>
-
-#include <KWindowSystem>
-
-#include "../libdbusmenuqt/dbusmenuimporter.h"
+#include <QTimer>
 #include <QDebug>
 
-#include <xcb/xcb.h>
 
-static QByteArray getWindowPropertyString(WId id, const QByteArray &name)
+#include "../libdbusmenuqt/dbusmenuimporter.h"
+
+#include <xcb/xcb.h>
+#include <xcb/xproto.h>
+
+/*
+ * Helper: get xcb_connection_t from Qt6
+ */
+static xcb_connection_t *qt_x11_connection()
 {
-    xcb_connection_t *c = QX11Info::connection();
+    auto x11 = qApp->nativeInterface<QNativeInterface::QX11Application>();
+    if (!x11)
+        return nullptr;
+    return x11->connection();
+}
+
+/*
+ * Read a string property from a window (like object path / service name)
+ */
+static QByteArray getWindowPropertyString(xcb_window_t id, const QByteArray &name)
+{
+    xcb_connection_t *c = qt_x11_connection();
     QByteArray value;
 
-    const xcb_intern_atom_cookie_t atomCookie = xcb_intern_atom(c, false, name.length(), name.constData());
-    QScopedPointer<xcb_intern_atom_reply_t, QScopedPointerPodDeleter> atomReply(xcb_intern_atom_reply(c, atomCookie, Q_NULLPTR));
-    if (atomReply.isNull()) {
+    if (!c)
         return value;
-    }
 
-    static const long MAX_PROP_SIZE = 10000;
-    auto propertyCookie = xcb_get_property(c, false, id, atomReply->atom, XCB_ATOM_STRING, 0, MAX_PROP_SIZE);
-    QScopedPointer<xcb_get_property_reply_t, QScopedPointerPodDeleter> propertyReply(xcb_get_property_reply(c, propertyCookie, NULL));
-    if (propertyReply.isNull()) {
+    const xcb_intern_atom_cookie_t atomCookie =
+            xcb_intern_atom(c, false, name.size(), name.constData());
+    std::unique_ptr<xcb_intern_atom_reply_t, void(*)(xcb_intern_atom_reply_t*)> atomReply(
+            xcb_intern_atom_reply(c, atomCookie, nullptr),
+            [](xcb_intern_atom_reply_t *p){ if (p) free(p); });
+
+    if (!atomReply)
         return value;
-    }
 
-    if (propertyReply->type == XCB_ATOM_STRING && propertyReply->format == 8 && propertyReply->value_len > 0) {
-        const char *data = (const char *) xcb_get_property_value(propertyReply.data());
+    static const uint32_t MAX_PROP_SIZE = 10000;
+    xcb_get_property_cookie_t propertyCookie =
+            xcb_get_property(c, false, id, atomReply->atom, XCB_ATOM_STRING, 0, MAX_PROP_SIZE);
+
+    std::unique_ptr<xcb_get_property_reply_t, void(*)(xcb_get_property_reply_t*)> propertyReply(
+            xcb_get_property_reply(c, propertyCookie, nullptr),
+            [](xcb_get_property_reply_t *p){ if (p) free(p); });
+
+    if (!propertyReply)
+        return value;
+
+    if (propertyReply->type == XCB_ATOM_STRING &&
+        propertyReply->format == 8 &&
+        propertyReply->value_len > 0) {
+
+        const char *data = reinterpret_cast<const char*>(xcb_get_property_value(propertyReply.get()));
         int len = propertyReply->value_len;
-        if (data) {
+        if (data)
             value = QByteArray(data, data[len - 1] ? len : len - 1);
-        }
     }
 
     return value;
 }
+
+/*
+ * Get the current active window using _NET_ACTIVE_WINDOW on the root window.
+ * Returns 0 when unavailable.
+ */
+static xcb_window_t getActiveWindow()
+{
+    xcb_connection_t *c = qt_x11_connection();
+    if (!c)
+        return 0;
+
+    xcb_screen_iterator_t it = xcb_setup_roots_iterator(xcb_get_setup(c));
+    xcb_screen_t *screen = it.data;
+    if (!screen)
+        return 0;
+
+    xcb_window_t root = screen->root;
+    const QByteArray atomName = QByteArrayLiteral("_NET_ACTIVE_WINDOW");
+
+    xcb_intern_atom_cookie_t atomCookie =
+            xcb_intern_atom(c, false, atomName.size(), atomName.constData());
+    std::unique_ptr<xcb_intern_atom_reply_t, void(*)(xcb_intern_atom_reply_t*)> atomReply(
+            xcb_intern_atom_reply(c, atomCookie, nullptr),
+            [](xcb_intern_atom_reply_t *p){ if (p) free(p); });
+
+    if (!atomReply)
+        return 0;
+
+    xcb_get_property_cookie_t propCookie =
+            xcb_get_property(c, false, root, atomReply->atom, XCB_ATOM_WINDOW, 0, 1);
+
+    std::unique_ptr<xcb_get_property_reply_t, void(*)(xcb_get_property_reply_t*)> propReply(
+            xcb_get_property_reply(c, propCookie, nullptr),
+            [](xcb_get_property_reply_t *p){ if (p) free(p); });
+
+    if (!propReply)
+        return 0;
+
+    if (propReply->value_len == 0)
+        return 0;
+
+    // value is window id (CARD32)
+    uint32_t *val = reinterpret_cast<uint32_t*>(xcb_get_property_value(propReply.get()));
+    if (!val)
+        return 0;
+
+    return static_cast<xcb_window_t>(*val);
+}
+
+/* ------------------------------------------------------------------ */
 
 class CDBusMenuImporter : public DBusMenuImporter
 {
@@ -95,9 +170,13 @@ AppMenuModel::AppMenuModel(QObject *parent)
         }
     });
 
-    // Active window
-    connect(KWindowSystem::self(), &KWindowSystem::activeWindowChanged, this, &AppMenuModel::onActiveWindowChanged, Qt::QueuedConnection);
-    connect(KWindowSystem::self(), static_cast<void (KWindowSystem::*)(WId)>(&KWindowSystem::windowChanged), this, &AppMenuModel::onActiveWindowChanged, Qt::QueuedConnection);
+    // Polling timer to detect active window changes (替代 KWindowSystem 信号)
+    QTimer *pollTimer = new QTimer(this);
+    pollTimer->setInterval(400); // 400ms, 可调
+    connect(pollTimer, &QTimer::timeout, this, &AppMenuModel::onActiveWindowChanged);
+    pollTimer->start();
+
+    // 初始触发一次
     onActiveWindowChanged();
 
     m_serviceWatcher->setConnection(QDBusConnection::sessionBus());
@@ -159,15 +238,16 @@ void AppMenuModel::update()
 
 void AppMenuModel::onActiveWindowChanged()
 {
-    // 为了兼容旧版本，不使用新的 API
-//    KWindowInfo info(KWindowSystem::activeWindow(),
-//                     NET::WMState | NET::WMVisibleName,
-//                     NET::WM2AppMenuObjectPath | NET::WM2AppMenuServiceName);
-//    const QString objectPath = info.applicationMenuObjectPath();
-//    const QString serviceName = info.applicationMenuServiceName();
+    // read active window via EWMH
+    const xcb_window_t active = getActiveWindow();
+    if (!active) {
+        // no active window
+        setVisible(false);
+        return;
+    }
 
-    const QString objectPath = QString::fromUtf8(getWindowPropertyString(KWindowSystem::activeWindow(), "_KDE_NET_WM_APPMENU_OBJECT_PATH"));
-    const QString serviceName = QString::fromUtf8(getWindowPropertyString(KWindowSystem::activeWindow(), "_KDE_NET_WM_APPMENU_SERVICE_NAME"));
+    const QString objectPath = QString::fromUtf8(getWindowPropertyString(active, QByteArrayLiteral("_KDE_NET_WM_APPMENU_OBJECT_PATH")));
+    const QString serviceName = QString::fromUtf8(getWindowPropertyString(active, QByteArrayLiteral("_KDE_NET_WM_APPMENU_SERVICE_NAME")));
 
     if (!objectPath.isEmpty() && !serviceName.isEmpty()) {
         setMenuAvailable(true);
@@ -175,7 +255,7 @@ void AppMenuModel::onActiveWindowChanged()
         setVisible(true);
         emit modelNeedsUpdate();
     } else {
-        // setMenuAvailable(false);
+        // no appmenu for active window
         setVisible(false);
     }
 }
