@@ -297,21 +297,21 @@ Item {
                     smooth: false
                 }
 
-                Image {
-                    id: wirelessIcon
-                    width: rootItem.iconSize
-                    height: width
-                    sourceSize: Qt.size(width, height)
-                    source: activeConnection.wirelessIcon ? "qrc:/images/" + (rootItem.darkMode ? "dark/" : "light/") + activeConnection.wirelessIcon + ".svg" : ""
-                    asynchronous: true
-                    Layout.alignment: Qt.AlignCenter
-                    visible: enabledConnections.wirelessHwEnabled &&
-                             enabledConnections.wirelessEnabled &&
-                             activeConnection.wirelessName &&
-                             wirelessIcon.status === Image.Ready
-                    antialiasing: true
-                    smooth: false
-                }
+                // Image {
+                //     id: wirelessIcon
+                //     width: rootItem.iconSize
+                //     height: width
+                //     sourceSize: Qt.size(width, height)
+                //     source: activeConnection.wirelessIcon ? "qrc:/images/" + (rootItem.darkMode ? "dark/" : "light/") + activeConnection.wirelessIcon + ".svg" : ""
+                //     asynchronous: true
+                //     Layout.alignment: Qt.AlignCenter
+                //     visible: enabledConnections.wirelessHwEnabled &&
+                //              enabledConnections.wirelessEnabled &&
+                //              activeConnection.wirelessName &&
+                //              wirelessIcon.status === Image.Ready
+                //     antialiasing: true
+                //     smooth: false
+                // }
 
                 // Battery Item
                 RowLayout {
@@ -473,15 +473,4 @@ Item {
         asynchronous: true
     }
 
-    NM.ActiveConnection {
-        id: activeConnection
-    }
-
-    NM.EnabledConnections {
-        id: enabledConnections
-    }
-
-    NM.Handler {
-        id: nmHandler
-    }
 }

@@ -242,7 +242,10 @@ ControlCenterDialog {
                     visible: enabledConnections.wirelessHwEnabled
                     checked: enabledConnections.wirelessEnabled
                     label: activeConnection.wirelessName ? activeConnection.wirelessName : qsTr("Wi-Fi")
-                    onClicked: nmHandler.enableWireless(!checked)
+                    onClicked: {
+                        // TODO: Fix network management in Qt6
+                        console.log("Wi-Fi toggle clicked - network management disabled in Qt6 migration")
+                    }
                     onPressAndHold: {
                         control.visible = false
                         process.startDetached("cutefish-settings", ["-m", "wlan"])

@@ -18,8 +18,13 @@ qt_standard_project_setup()
 # 查找KF6包 - 可能需要根据实际模块调整名称
 find_package(KF6WindowSystem REQUIRED)
 
+# 查找libcutefish
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(XCB_LIBS REQUIRED xcb)
+
+# libcutefish没有提供CMake配置文件，我们直接链接库
+# 设置libcutefish库路径
+set(LIBCUTEFISH_LIBRARIES cutefishnm_qmlplugins)
 
 set(SRCS
     src/main.cpp
@@ -126,6 +131,7 @@ target_link_libraries(cutefish-statusbar-qml
   Qt6::Concurrent
   Qt6::DBus
   KF6::WindowSystem
+  ${LIBCUTEFISH_LIBRARIES}
   ${XCB_LIBS_LIBRARIES}
 )
 
@@ -143,6 +149,7 @@ target_link_libraries(cutefish-statusbar
   Qt6::Concurrent
   Qt6::DBus
   KF6::WindowSystem
+  ${LIBCUTEFISH_LIBRARIES}
   ${XCB_LIBS_LIBRARIES}
 )
 
