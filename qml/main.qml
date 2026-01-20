@@ -22,9 +22,9 @@ import QtQuick.Layouts 6.0
 import QtQuick.Controls 6.0
 import QtQuick.Window 6.0
 
-import cutefish.system 1.0 as System
+import cutefish.networkmanagement 1.0
+import Cutefish.System 1.0
 import Cutefish.StatusBar 1.0
-import Cutefish.NetworkManagement 1.0 as NM
 import FishUI 1.0 as FishUI
 
 Item {

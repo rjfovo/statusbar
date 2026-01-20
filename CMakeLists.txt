@@ -109,10 +109,10 @@ qt6_add_dbus_adaptor(DBUS_SOURCES
                      src/statusbar.h StatusBar)
 
 # 首先创建一个QML模块库
-qt6_add_qml_module(cutefish-statusbar-qml
-    URI Cutefish.StatusBar
+qt_add_qml_module(cutefish-statusbar-qml
+    URI "cutefish.statusbar"
     VERSION 1.0
-    OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/Cutefish/StatusBar
+    OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/cutefish/statusbar
     QML_FILES
         # 如果有QML文件，可以在这里添加
     SOURCES
@@ -160,4 +160,11 @@ file(GLOB TS_FILES translations/*.ts)
 qt6_add_translations(cutefish-statusbar-qml TS_FILES ${TS_FILES})
 
 install(TARGETS cutefish-statusbar RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
-# QML模块会自动安装，不需要手动安装
+
+
+# 获取Qt6的QML安装路径
+if (NOT DEFINED INSTALL_QMLDIR OR INSTALL_QMLDIR STREQUAL "")
+    set(INSTALL_QMLDIR "${CMAKE_INSTALL_LIBDIR}/qt6/qml")
+endif()
+install(DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/cutefish/statusbar
+        DESTINATION ${INSTALL_QMLDIR}/cutefish)

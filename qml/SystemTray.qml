@@ -64,7 +64,7 @@ ListView {
                 _trayItem.mouseArea.drag.target = iconItem
                 iconItem.grabToImage(function(result) {
                     _trayItem.Drag.imageSource = result.url
-                })
+                }, Qt.size(iconItem.width, iconItem.height))
             } else {
                 _trayItem.mouseArea.drag.target = null
             }
