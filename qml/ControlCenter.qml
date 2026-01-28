@@ -24,7 +24,7 @@ import QtQuick.Layouts 6.0
 import Qt5Compat.GraphicalEffects 6.0
 
 import Cutefish.Accounts 1.0 as Accounts
-import Cutefish.Bluez 1.0 as Bluez
+import cutefish.bluez 1.0 as Bluez
 import Cutefish.StatusBar 1.0
 import Cutefish.Audio 1.0
 import FishUI 1.0 as FishUI
