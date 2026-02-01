@@ -24,7 +24,16 @@ pkg_check_modules(XCB_LIBS REQUIRED xcb)
 
 # libcutefish没有提供CMake配置文件，我们直接链接库
 # 设置libcutefish库路径
-set(LIBCUTEFISH_LIBRARIES cutefishnm_qmlplugins)
+set(LIBCUTEFISH_LIBRARIES cutefishnm_qmlplugins cutefishsystem_qmlplugins)
+
+# 添加libcutefish库的搜索路径
+set(LIBCUTEFISH_LIB_DIRS 
+    ${CMAKE_SOURCE_DIR}/../libcutefish/obj-x86_64-linux-gnu/networkmanagement
+    ${CMAKE_SOURCE_DIR}/../libcutefish/obj-x86_64-linux-gnu/system
+)
+
+# 添加库搜索路径
+link_directories(${LIBCUTEFISH_LIB_DIRS})
 
 set(SRCS
     src/main.cpp
@@ -161,10 +170,39 @@ qt6_add_translations(cutefish-statusbar-qml TS_FILES ${TS_FILES})
 
 install(TARGETS cutefish-statusbar RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 
+# 安装QML库文件到系统库目录
+install(TARGETS cutefish-statusbar-qml
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
 
 # 获取Qt6的QML安装路径
 if (NOT DEFINED INSTALL_QMLDIR OR INSTALL_QMLDIR STREQUAL "")
     set(INSTALL_QMLDIR "${CMAKE_INSTALL_LIBDIR}/qt6/qml")
 endif()
+
+# 安装QML模块
 install(DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/cutefish/statusbar
         DESTINATION ${INSTALL_QMLDIR}/cutefish)
+
+# 修复qrc文件中的绝对路径问题
+# 在安装后修复qrc文件，将绝对路径替换为相对路径
+install(CODE "
+    message(STATUS \"Fixing qrc file paths...\")
+    file(GLOB_RECURSE QRC_FILES \"\${CMAKE_INSTALL_PREFIX}/${INSTALL_QMLDIR}/cutefish/statusbar/*.qrc\")
+    foreach(QRC_FILE \${QRC_FILES})
+        file(READ \${QRC_FILE} QRC_CONTENT)
+        # 替换绝对路径为相对路径
+        # 匹配格式: <file alias=\"/cutefish/statusbar\">/workspace/cutefish_project/cutefish/code/statusbar/obj-x86_64-linux-gnu/cutefish/statusbar</file>
+        # 注意：CMake的正则表达式需要正确转义
+        string(REGEX REPLACE \"<file alias=\\\"/cutefish/statusbar\\\">[^<]*</file>\"
+               \"<file alias=\\\"/cutefish/statusbar\\\">cutefish/statusbar</file>\"
+               QRC_CONTENT_FIXED \${QRC_CONTENT})
+        if(NOT \"\${QRC_CONTENT}\" STREQUAL \"\${QRC_CONTENT_FIXED}\")
+            file(WRITE \${QRC_FILE} \${QRC_CONTENT_FIXED})
+            message(STATUS \"Fixed qrc file: \${QRC_FILE}\")
+        else()
+            message(STATUS \"No changes needed for qrc file: \${QRC_FILE}\")
+        endif()
+    endforeach()
+")

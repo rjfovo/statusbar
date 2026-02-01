@@ -23,10 +23,11 @@ import QtQuick.Window 6.0
 import QtQuick.Layouts 6.0
 import Qt5Compat.GraphicalEffects 6.0
 
-import Cutefish.Accounts 1.0 as Accounts
+import cutefish.accounts 1.0 as Accounts
 import cutefish.bluez 1.0 as Bluez
+import cutefish.networkmanagement 1.0
 import Cutefish.StatusBar 1.0
-import Cutefish.Audio 1.0
+import cutefish.audio 1.0
 import FishUI 1.0 as FishUI
 
 ControlCenterDialog {
@@ -40,7 +41,7 @@ ControlCenterDialog {
     property var defaultSink: paSinkModel.defaultSink
 
     property bool bluetoothDisConnected: Bluez.Manager.bluetoothBlocked
-    property var defaultSinkValue: defaultSink ? defaultSink.volume / PulseAudio.NormalVolume * 100.0 : -1
+    property var defaultSinkValue: defaultSink ? defaultSink.volume / 65536.0 * 100.0 : -1
 
     property var borderColor: windowHelper.compositing ? FishUI.Theme.darkMode ? Qt.rgba(255, 255, 255, 0.3)
                                                                   : Qt.rgba(0, 0, 0, 0.2) : FishUI.Theme.darkMode ? Qt.rgba(255, 255, 255, 0.15)
@@ -86,6 +87,14 @@ ControlCenterDialog {
                 return
             }
         }
+    }
+
+    EnabledConnections {
+        id: enabledConnections
+    }
+
+    ActiveConnection {
+        id: activeConnection
     }
 
     function toggleBluetooth() {
@@ -403,10 +412,10 @@ ControlCenterDialog {
                     Layout.fillWidth: true
                     Layout.fillHeight: true
 
-                    from: PulseAudio.MinimalVolume
-                    to: PulseAudio.NormalVolume
+                    from: 0
+                    to: 65536
 
-                    stepSize: to / (to / PulseAudio.NormalVolume * 100.0)
+                    stepSize: 655.36
 
                     value: defaultSink ? defaultSink.volume : 0
 

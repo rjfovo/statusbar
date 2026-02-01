@@ -7,3 +7,13 @@ export QT_SELECT=6
 
 override_dh_auto_configure:
 	dh_auto_configure -- -DEMBED_TRANSLATIONS=ON -DBUILD_TESTING=ON
+
+override_dh_install:
+	dh_install
+	# 修复qrc文件中的绝对路径问题
+	if [ -d debian/cutefish-statusbar ]; then \
+		find debian/cutefish-statusbar -name "*.qrc" -type f | while read qrc_file; do \
+			echo "Fixing qrc file: $$qrc_file"; \
+			sed -i 's|<file alias="/cutefish/statusbar">[^<]*</file>|<file alias="/cutefish/statusbar">cutefish/statusbar</file>|' "$$qrc_file"; \
+		done; \
+	fi

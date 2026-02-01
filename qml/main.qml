@@ -22,8 +22,8 @@ import QtQuick.Layouts 6.0
 import QtQuick.Controls 6.0
 import QtQuick.Window 6.0
 
-import cutefish.networkmanagement 1.0
-import Cutefish.System 1.0
+import cutefish.networkmanagement 1.0 
+import cutefish.system 1.0 as System
 import Cutefish.StatusBar 1.0
 import FishUI 1.0 as FishUI
 
@@ -65,9 +65,9 @@ Item {
     BackgroundHelper {
         id: bgHelper
 
-        onNewColor: {
-            background.color = color
-            rootItem.darkMode = darkMode
+        onNewColor: function(newColor, isDarkMode) {
+            background.color = newColor
+            rootItem.darkMode = isDarkMode
         }
     }
 

@@ -52,7 +52,23 @@ void BackgroundHelper::setBackgound(const QString &fileName)
     m_wallpaper = fileName;
     m_type = 0;
 
+    // Check if filename is empty
+    if (fileName.isEmpty()) {
+        qWarning() << "Failed to load wallpaper: empty filename";
+        // Use default color if filename is empty
+        setColor(QColor("#2D2D2D"));
+        return;
+    }
+
     QImage img(fileName);
+
+    // Check if image loaded successfully
+    if (img.isNull()) {
+        qWarning() << "Failed to load wallpaper:" << fileName;
+        // Use default color if image fails to load
+        setColor(QColor("#2D2D2D"));
+        return;
+    }
 
     QSize screenSize = qApp->primaryScreen()->geometry().size();
     img = img.scaled(screenSize.width(), screenSize.height());
