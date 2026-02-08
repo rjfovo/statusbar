@@ -20,6 +20,9 @@
 #include <QApplication>
 #include <QTranslator>
 #include <QLocale>
+#include <QIcon>
+#include <QDir>
+#include <QDebug>
 
 #include "statusbar.h"
 #include "controlcenterdialog.h"
@@ -38,6 +41,36 @@ int main(int argc, char *argv[])
 {
     QCoreApplication::setAttribute(Qt::AA_EnableHighDpiScaling);
     QApplication app(argc, argv);
+
+    // Set icon theme for Qt6
+    // In Qt6, we need to ensure icon theme is properly set
+    // First set the search paths
+    QStringList iconThemePaths;
+    iconThemePaths << "/usr/share/icons";
+    iconThemePaths << QDir::homePath() + "/.local/share/icons";
+    iconThemePaths << "/usr/local/share/icons";
+    QIcon::setThemeSearchPaths(iconThemePaths);
+    
+    // Try to set icon theme in order of preference
+    QStringList preferredThemes = {"cutefish", "Crule", "Crule-dark", "breeze", "Adwaita", "hicolor"};
+    QString themeSet = "hicolor"; // default fallback
+    
+    for (const QString &theme : preferredThemes) {
+        QString themePath = QString("/usr/share/icons/%1").arg(theme);
+        if (QDir(themePath).exists()) {
+            themeSet = theme;
+            break;
+        }
+    }
+    
+    QIcon::setThemeName(themeSet);
+    qDebug() << "StatusBar: Icon theme set to:" << QIcon::themeName() << "from search paths:" << QIcon::themeSearchPaths();
+    
+    // Ensure QIcon image provider is available for QML
+    // This is needed for image://icontheme/ URLs to work
+    if (QIcon::themeName().isEmpty()) {
+        qWarning() << "StatusBar: No icon theme set! image://icontheme/ URLs will not work.";
+    }
 
     const char *uri = "Cutefish.StatusBar";
     qmlRegisterType<SystemTrayModel>(uri, 1, 0, "SystemTrayModel");
