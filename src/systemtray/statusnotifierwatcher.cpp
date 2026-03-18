@@ -31,10 +31,24 @@
 StatusNotifierWatcher::StatusNotifierWatcher(QObject *parent)
     : QObject(parent)
 {
-    new StatusNotifierWatcherAdaptor(this);
+    // 检查服务是否已经存在
     QDBusConnection dbus = QDBusConnection::sessionBus();
+    QDBusConnectionInterface *iface = dbus.interface();
+    
+    // 总是创建adaptor和对象，这样DBus调用才能被处理
+    new StatusNotifierWatcherAdaptor(this);
     dbus.registerObject(QStringLiteral("/StatusNotifierWatcher"), this);
-    dbus.registerService(QStringLiteral("org.kde.StatusNotifierWatcher"));
+    
+    // 检查服务是否已经存在，避免重复注册
+    if (iface && iface->isServiceRegistered(QStringLiteral("org.kde.StatusNotifierWatcher")).value()) {
+        qWarning() << "org.kde.StatusNotifierWatcher service already registered by another instance";
+        // 不注册服务，但继续初始化其他部分
+    } else {
+        // 注册服务
+        if (!dbus.registerService(QStringLiteral("org.kde.StatusNotifierWatcher"))) {
+            qWarning() << "Failed to register org.kde.StatusNotifierWatcher service";
+        }
+    }
 
     m_serviceWatcher = new QDBusServiceWatcher(this);
     m_serviceWatcher->setConnection(dbus);

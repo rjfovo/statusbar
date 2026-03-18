@@ -206,3 +206,7 @@ install(CODE "
         endif()
     endforeach()
 ")
+
+# 安装DBus服务文件
+install(FILES org.kde.StatusNotifierWatcher.service
+        DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/dbus-1/services)
